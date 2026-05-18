@@ -1,0 +1,127 @@
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_current_user
+from app.db.session import get_db
+from app.models.fraud_alert import FraudAlert
+from app.models.transaction import Transaction
+from app.models.user import User
+from app.realtime.manager import manager
+from app.schemas.transaction import FraudEvaluation, TransactionCreate, TransactionOut
+from app.services.fraud_engine import fraud_engine
+from app.services.graph_service import graph_service
+from app.services.signature_service import signature_service
+
+router = APIRouter()
+
+
+def serialize_transaction(tx: Transaction) -> dict:
+    return {
+        "id": tx.id,
+        "sender_id": tx.sender_id,
+        "receiver_id": tx.receiver_id,
+        "sender_name": (tx.sender.full_name or tx.sender.name) if tx.sender else None,
+        "receiver_name": (tx.receiver.full_name or tx.receiver.name) if tx.receiver else None,
+        "amount": tx.amount,
+        "transaction_hash": tx.transaction_hash,
+        "signature_verified": tx.signature_verified,
+        "status": tx.status,
+        "fraud_score": tx.fraud_score,
+        "risk_level": tx.risk_level,
+        "ai_summary": tx.ai_summary,
+        "created_at": tx.created_at,
+    }
+
+
+@router.get("")
+def list_transactions(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    query = db.query(Transaction).order_by(Transaction.created_at.desc())
+    if user.role != "admin":
+        query = query.filter((Transaction.sender_id == user.id) | (Transaction.receiver_id == user.id))
+    return [serialize_transaction(tx) for tx in query.limit(200).all()]
+
+
+@router.post("/evaluate", response_model=FraudEvaluation)
+def evaluate_transaction(payload: TransactionCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    receiver = db.query(User).filter(User.email == payload.receiver_email).first()
+    if not receiver:
+        raise HTTPException(status_code=404, detail="Receiver not found")
+    if receiver.id == user.id:
+        raise HTTPException(status_code=400, detail="Cannot send money to yourself")
+    if user.is_frozen:
+        raise HTTPException(status_code=403, detail="Your account is frozen")
+    if receiver.is_frozen:
+        raise HTTPException(status_code=403, detail="Receiver account is frozen")
+    if user.balance < payload.amount:
+        raise HTTPException(status_code=400, detail="Insufficient balance")
+    result = fraud_engine.evaluate(db, user, receiver, payload.amount)
+    return result
+
+
+@router.post("", response_model=TransactionOut)
+async def create_transaction(payload: TransactionCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.is_frozen:
+        raise HTTPException(status_code=403, detail="Your account is frozen")
+    receiver = db.query(User).filter(User.email == payload.receiver_email).first()
+    if not receiver:
+        raise HTTPException(status_code=404, detail="Receiver not found")
+    if receiver.id == user.id:
+        raise HTTPException(status_code=400, detail="Cannot send money to yourself")
+    if receiver.is_frozen:
+        raise HTTPException(status_code=403, detail="Receiver account is frozen")
+    if user.balance < payload.amount:
+        raise HTTPException(status_code=400, detail="Insufficient balance")
+
+    evaluation = fraud_engine.evaluate(db, user, receiver, payload.amount)
+    created_at = datetime.now(timezone.utc)
+    signature_payload = signature_service.transaction_payload(user.id, receiver.id, payload.amount, created_at)
+    transaction_hash = signature_service.transaction_hash(signature_payload)
+    try:
+        digital_signature = signature_service.sign_hash(user, transaction_hash)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Digital signature identity is not configured for this account")
+    signature_verified = signature_service.verify_signature(user.public_key or "", transaction_hash, digital_signature)
+    if not signature_verified:
+        raise HTTPException(status_code=403, detail="Digital signature verification failed")
+
+    status = "blocked" if evaluation["risk_level"] == "HIGH RISK" else "completed"
+    tx = Transaction(
+        sender_id=user.id,
+        receiver_id=receiver.id,
+        amount=payload.amount,
+        transaction_hash=transaction_hash,
+        digital_signature=digital_signature,
+        signature_verified=signature_verified,
+        status=status,
+        fraud_score=evaluation["score"],
+        risk_level=evaluation["risk_level"],
+        ai_summary=evaluation["recommendation"],
+        created_at=created_at,
+    )
+    if status == "completed":
+        user.balance -= payload.amount
+        receiver.balance += payload.amount
+    user.risk_score = max(user.risk_score, evaluation["score"])
+    receiver.risk_score = max(receiver.risk_score, evaluation["score"] * 0.65)
+    db.add(tx)
+    db.commit()
+    db.refresh(tx)
+
+    if evaluation["risk_level"] != "LOW RISK":
+        alert = FraudAlert(
+            user_id=user.id,
+            transaction_id=tx.id,
+            alert_type=evaluation["risk_level"],
+            severity="critical" if evaluation["risk_level"] == "HIGH RISK" else "warning",
+            message="; ".join(evaluation["reasons"]),
+        )
+        db.add(alert)
+        db.commit()
+
+    if status == "completed":
+        graph_service.sync_transaction(user, receiver, tx)
+    payload_out = serialize_transaction(tx)
+    await manager.broadcast({"type": "transaction.created", "payload": payload_out})
+    return payload_out
