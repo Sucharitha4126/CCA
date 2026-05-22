@@ -31,7 +31,7 @@ class FraudEngine:
         reasons: list[str] = []
 
         if amount >= settings.HIGH_VALUE_THRESHOLD:
-            score += 30
+            score += 65
             reasons.append("High-value transfer exceeds configured threshold.")
 
         if sender.balance > 0:
