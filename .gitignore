@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv-run/
+venv/
+*.db
+.env
+server.log
+server.err.log
+
+# Node
+node_modules/
+dist/
+.vite/
+.vercel/
+npm-debug.log*
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
