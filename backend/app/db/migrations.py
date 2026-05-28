@@ -1,5 +1,7 @@
 from sqlalchemy import inspect, text
 
+from app.core.config import settings
+from app.core.security import hash_password
 from app.db.session import engine
 from app.models.user import User
 
@@ -79,5 +81,48 @@ def ensure_digital_signature_identities():
             user.digital_identity = identity["digital_identity"]
         if users:
             db.commit()
+    finally:
+        db.close()
+
+
+def ensure_default_admin_user():
+    from app.db.session import SessionLocal
+    from app.services.signature_service import signature_service
+
+    db = SessionLocal()
+    try:
+        admin = db.query(User).filter(User.email == settings.DEFAULT_ADMIN_EMAIL).first()
+        if admin:
+            if admin.role != "admin":
+                admin.role = "admin"
+                db.commit()
+            return
+
+        password_hash = hash_password(settings.DEFAULT_ADMIN_PASSWORD)
+        identity = signature_service.generate_identity(settings.DEFAULT_ADMIN_EMAIL, "SP-900001")
+        db.add(
+            User(
+                name="Kavach Admin",
+                full_name="Kavach Admin",
+                email=settings.DEFAULT_ADMIN_EMAIL,
+                phone_number="+91 98765 00000",
+                address="Kavach administrator account",
+                account_number="SP-900001",
+                ifsc_code="SNPY0001234",
+                bank_name="Kavach Trust Bank",
+                branch_name="Digital Banking Branch",
+                account_type="Current",
+                pan_number="KAVAC9001H",
+                public_key=identity["public_key"],
+                encrypted_private_key=identity["encrypted_private_key"],
+                digital_identity=identity["digital_identity"],
+                password=password_hash,
+                password_hash=password_hash,
+                role="admin",
+                balance=120000,
+                risk_score=8,
+            )
+        )
+        db.commit()
     finally:
         db.close()

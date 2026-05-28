@@ -8,12 +8,13 @@ from slowapi.util import get_remote_address
 from app.api import admin, auth, graph, transactions, users, websocket
 from app.core.config import settings
 from app.core.errors import rate_limit_handler
-from app.db.migrations import ensure_digital_signature_identities, ensure_schema_columns
+from app.db.migrations import ensure_default_admin_user, ensure_digital_signature_identities, ensure_schema_columns
 from app.db.session import Base, engine
 
 Base.metadata.create_all(bind=engine)
 ensure_schema_columns()
 ensure_digital_signature_identities()
+ensure_default_admin_user()
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 

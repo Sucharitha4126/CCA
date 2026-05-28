@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     OUTGOING_WEBHOOK_URL: str | None = None
     ALERT_HTTP_TIMEOUT_SECONDS: float = 5.0
     ALERT_COOLDOWN_SECONDS: int = 300
+    DEFAULT_ADMIN_EMAIL: str = "admin@sentinelpay.io"
+    DEFAULT_ADMIN_PASSWORD: str = "Admin@123"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
