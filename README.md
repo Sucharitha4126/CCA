@@ -101,7 +101,9 @@ Registration includes phone number, account number, and a hashed digital safety 
 2. Root directory: `frontend`
 3. Build command: `npm run build`
 4. Output directory: `dist`
-5. Add `VITE_API_URL=https://your-render-service.onrender.com`.
+5. Add frontend environment variables:
+   `VITE_API_URL=https://your-render-service.onrender.com`
+   `VITE_WS_URL=wss://your-render-service.onrender.com/ws/transactions`
 
 ## Core Fraud Detection
 
@@ -165,7 +167,7 @@ SMTP_PORT=587
 SMTP_USERNAME=alerts@example.com
 SMTP_PASSWORD=replace-with-secret
 ALERT_FROM_EMAIL=alerts@example.com
-ALERT_TO_EMAIL=compliance@example.com
+ALERT_TO_EMAIL=sucharitha4126@gmail.com
 ```
 
 Email alerts use an HTML summary card, transaction details table, fraud indicators, timestamp, and recommended manual review action.
@@ -203,7 +205,7 @@ SMTP_PORT=587
 SMTP_USERNAME=alerts@example.com
 SMTP_PASSWORD=replace-with-secret
 ALERT_FROM_EMAIL=alerts@example.com
-ALERT_TO_EMAIL=compliance@example.com
+ALERT_TO_EMAIL=sucharitha4126@gmail.com
 OUTGOING_WEBHOOK_URL=https://security.example.com/fraud-events
 ALERT_HTTP_TIMEOUT_SECONDS=5
 ALERT_COOLDOWN_SECONDS=300

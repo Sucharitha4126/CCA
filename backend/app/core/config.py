@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     SMTP_USERNAME: str | None = None
     SMTP_PASSWORD: str | None = None
     ALERT_FROM_EMAIL: str | None = None
-    ALERT_TO_EMAIL: str | None = None
+    ALERT_TO_EMAIL: str | None = "sucharitha4126@gmail.com"
     OUTGOING_WEBHOOK_URL: str | None = None
     ALERT_HTTP_TIMEOUT_SECONDS: float = 5.0
     ALERT_COOLDOWN_SECONDS: int = 300
