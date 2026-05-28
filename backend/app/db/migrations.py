@@ -126,3 +126,61 @@ def ensure_default_admin_user():
         db.commit()
     finally:
         db.close()
+
+
+def ensure_demo_users():
+    from app.db.session import SessionLocal
+    from app.services.signature_service import signature_service
+
+    demo_rows = [
+        {
+            "name": "Maya Shah",
+            "email": "maya@sentinelpay.io",
+            "phone_number": "+91 98765 43001",
+            "account_number": "SP-100245",
+            "balance": 52000,
+            "risk_score": 18,
+            "pan_number": "MAYAS0245P",
+        },
+        {
+            "name": "Arjun Mehta",
+            "email": "arjun@sentinelpay.io",
+            "phone_number": "+91 98765 43002",
+            "account_number": "SP-100246",
+            "balance": 41000,
+            "risk_score": 22,
+            "pan_number": "ARJUN0246P",
+        },
+    ]
+    password_hash = hash_password("User@123")
+    db = SessionLocal()
+    try:
+        for row in demo_rows:
+            if db.query(User).filter(User.email == row["email"]).first():
+                continue
+            identity = signature_service.generate_identity(row["email"], row["account_number"])
+            db.add(
+                User(
+                    name=row["name"],
+                    full_name=row["name"],
+                    email=row["email"],
+                    phone_number=row["phone_number"],
+                    address="Demo banking address",
+                    account_number=row["account_number"],
+                    ifsc_code="SNPY0001234",
+                    bank_name="Kavach Trust Bank",
+                    branch_name="Digital Banking Branch",
+                    account_type="Savings",
+                    pan_number=row["pan_number"],
+                    public_key=identity["public_key"],
+                    encrypted_private_key=identity["encrypted_private_key"],
+                    digital_identity=identity["digital_identity"],
+                    password=password_hash,
+                    password_hash=password_hash,
+                    balance=row["balance"],
+                    risk_score=row["risk_score"],
+                )
+            )
+        db.commit()
+    finally:
+        db.close()
