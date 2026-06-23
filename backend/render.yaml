@@ -11,7 +11,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: PYTHON_VERSION
-        value: 3.13.5
+        value: 3.12.10
       - key: DATABASE_URL
         sync: false
       - key: FRONTEND_URL
