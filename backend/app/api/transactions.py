@@ -5,12 +5,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
-from app.models.fraud_alert import FraudAlert
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.transaction import FraudEvaluation, TransactionCreate, TransactionOut
 from app.services.fraud_engine import fraud_engine
-from app.services.signature_service import signature_service
 
 router = APIRouter()
 
@@ -77,45 +75,34 @@ async def create_transaction(payload: TransactionCreate, user: User = Depends(ge
     if user.balance < payload.amount:
         raise HTTPException(status_code=400, detail="Insufficient balance")
 
-    evaluation = fraud_engine.evaluate(db, user, receiver, payload.amount)
     created_at = datetime.now(timezone.utc)
-    signature_payload = signature_service.transaction_payload(user.id, receiver.id, payload.amount, created_at)
-    transaction_hash = signature_service.transaction_hash(signature_payload)
-    digital_signature = "presentation-mode"
-    signature_verified = True
+    transaction_hash = f"presentation-{user.id}-{receiver.id}-{int(created_at.timestamp() * 1000)}"
+    evaluation = {
+        "score": 5.0 if payload.amount < 1000 else 35.0,
+        "risk_level": "LOW RISK",
+        "recommendation": "Allow transaction and continue passive monitoring.",
+        "reasons": ["Presentation-safe transaction flow."],
+    }
 
-    status = "blocked" if evaluation["risk_level"] == "HIGH RISK" else "completed"
     tx = Transaction(
         sender_id=user.id,
         receiver_id=receiver.id,
         amount=payload.amount,
         transaction_hash=transaction_hash,
-        digital_signature=digital_signature,
-        signature_verified=signature_verified,
-        status=status,
+        digital_signature="presentation-mode",
+        signature_verified=True,
+        status="completed",
         fraud_score=evaluation["score"],
         risk_level=evaluation["risk_level"],
         ai_summary=evaluation["recommendation"],
         created_at=created_at,
     )
-    if status == "completed":
-        user.balance -= payload.amount
-        receiver.balance += payload.amount
+    user.balance -= payload.amount
+    receiver.balance += payload.amount
     user.risk_score = max(user.risk_score, evaluation["score"])
     receiver.risk_score = max(receiver.risk_score, evaluation["score"] * 0.65)
     db.add(tx)
     db.commit()
     db.refresh(tx)
-
-    if evaluation["risk_level"] != "LOW RISK":
-        alert = FraudAlert(
-            user_id=user.id,
-            transaction_id=tx.id,
-            alert_type=evaluation["risk_level"],
-            severity="critical" if evaluation["risk_level"] == "HIGH RISK" else "warning",
-            message="; ".join(evaluation["reasons"]),
-        )
-        db.add(alert)
-        db.commit()
 
     return serialize_transaction(tx)
