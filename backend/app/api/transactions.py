@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,11 +8,8 @@ from app.db.session import get_db
 from app.models.fraud_alert import FraudAlert
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.realtime.manager import manager
 from app.schemas.transaction import FraudEvaluation, TransactionCreate, TransactionOut
-from app.services.alert_service import HighRiskTransactionAlert, alert_service
 from app.services.fraud_engine import fraud_engine
-from app.services.graph_service import graph_service
 from app.services.signature_service import signature_service
 
 router = APIRouter()
@@ -122,28 +118,4 @@ async def create_transaction(payload: TransactionCreate, user: User = Depends(ge
         db.add(alert)
         db.commit()
 
-    if status == "completed":
-        graph_service.sync_transaction(user, receiver, tx)
-    payload_out = serialize_transaction(tx)
-    if tx.fraud_score > 90:
-        alert_payload = HighRiskTransactionAlert(
-            transaction_id=f"TXN-{tx.id}",
-            amount=tx.amount,
-            risk_score=tx.fraud_score,
-            risk_level=tx.risk_level,
-            sender=user.email,
-            receiver=receiver.email,
-            timestamp=tx.created_at,
-            indicators=evaluation["reasons"],
-        )
-        asyncio.create_task(alert_service.dispatch_high_risk_transaction(alert_payload))
-        asyncio.create_task(
-            manager.broadcast(
-                {
-                    "type": "fraud.alert.high_risk",
-                    "payload": alert_payload.webhook_payload(),
-                }
-            )
-        )
-    await manager.broadcast({"type": "transaction.created", "payload": payload_out})
-    return payload_out
+    return serialize_transaction(tx)
